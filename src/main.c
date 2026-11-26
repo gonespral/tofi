@@ -4,7 +4,15 @@
 #include <getopt.h>
 #include <locale.h>
 #include <poll.h>
+#include <signal.h>
 #define BLINK_MS 530 /* sway patch: cursor blink half-period, like GTK */
+#define FADE_TICK 16 /* sway patch: --fade-in/--fade-out step, ms */
+/* sway patch: --fade-out -- SIGTERM (menu-tofi.sh close) closes with a fade. */
+static volatile sig_atomic_t got_sigterm = 0;
+static void handle_sigterm(int sig) { (void)sig; got_sigterm = 1; }
+static double fade_alpha = 1; /* the multiplier last sent */
+/* SwayFX animates windows with ease_out_cubic (animation_manager.c). */
+static double ease_out_cubic(double t) { return 1 - (1 - t) * (1 - t) * (1 - t); }
 /* sway patch: a long highlighted result scrolls MARQUEE_STEP px per
  * MARQUEE_TICK ms from the moment it's highlighted, back and forth, pausing
  * MARQUEE_PAUSE ms at each end. */
@@ -731,6 +739,14 @@ static void registry_global(
 				&wp_fractional_scale_manager_v1_interface,
 				1);
 		log_debug("Bound to wp_fractional_scale_manager_v1 %u.\n", name);
+	} else if (!strcmp(interface, wp_alpha_modifier_v1_interface.name)) {
+		/* sway patch: --fade-in/--fade-out */
+		tofi->wp_alpha_modifier = wl_registry_bind(
+				wl_registry,
+				name,
+				&wp_alpha_modifier_v1_interface,
+				1);
+		log_debug("Bound to wp_alpha_modifier_v1 %u.\n", name);
 	}
 }
 
@@ -927,6 +943,8 @@ const struct option long_options[] = {
 	{"box-width", required_argument, NULL, 0}, /* sway patch */
 	{"box-height", required_argument, NULL, 0},
 	{"dim-color", required_argument, NULL, 0},
+	{"fade-in", required_argument, NULL, 0},
+	{"fade-out", required_argument, NULL, 0},
 	{"linger", required_argument, NULL, 0},
 	{"linger-cancel", required_argument, NULL, 0},
 	{"hover-file", required_argument, NULL, 0},
@@ -1638,6 +1656,26 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	/*
+	 * sway patch: --fade-in/--fade-out=MS. The compositor multiplies the
+	 * whole surface by this (wp_alpha_modifier_v1); the main loop steps it
+	 * with commits only, no redraws. Fade in starts fully transparent.
+	 */
+	if ((tofi.fade_in_ms > 0 || tofi.fade_out_ms > 0) && tofi.wp_alpha_modifier != NULL) {
+		tofi.alpha_surface = wp_alpha_modifier_v1_get_surface(
+				tofi.wp_alpha_modifier,
+				tofi.window.surface.wl_surface);
+		if (tofi.fade_in_ms > 0) {
+			wp_alpha_modifier_surface_v1_set_multiplier(tofi.alpha_surface, 0);
+			fade_alpha = 0;
+		}
+	}
+	if (tofi.fade_out_ms > 0) {
+		struct sigaction sa = { .sa_handler = handle_sigterm }; /* no SA_RESTART: poll() wakes */
+		sigemptyset(&sa.sa_mask);
+		sigaction(SIGTERM, &sa, NULL);
+	}
+
 	/* Commit the surface to finalise setup. */
 	wl_surface_commit(tofi.window.surface.wl_surface);
 
@@ -1783,6 +1821,9 @@ int main(int argc, char *argv[])
 	 * order of the various functions called here.
 	 */
 	int64_t blink_next = 0; /* sway patch */
+	/* sway patch: --fade-in, from the first frame on screen. */
+	int64_t fade_start = (tofi.alpha_surface != NULL && tofi.fade_in_ms > 0)
+		? (int64_t)gettime_ms() : -1;
 	/*
 	 * sway patch: --hover-file=PATH (a FIFO). The highlighted result, as
 	 * a line, whenever it changes -- the first one included -- for live
@@ -1838,6 +1879,10 @@ int main(int argc, char *argv[])
 			if (timeout < 0 || wait < timeout) {
 				timeout = wait;
 			}
+		}
+		/* sway patch: and for the fade's next step (~60 fps). */
+		if (fade_start >= 0 && (timeout < 0 || timeout > FADE_TICK)) {
+			timeout = FADE_TICK;
 		}
 		/* sway patch: and for the marquee's next step. */
 		if (tofi.window.entry.marquee_max > 0) {
@@ -1908,6 +1953,29 @@ int main(int argc, char *argv[])
 
 		/* Handle any events we read. */
 		wl_display_dispatch_pending(tofi.wl_display);
+		if (got_sigterm) { /* sway patch: --fade-out */
+			tofi.closed = true;
+			break;
+		}
+
+		/*
+		 * sway patch: fade in. A redraw below commits the new multiplier
+		 * too; else commit it alone.
+		 */
+		if (fade_start >= 0) {
+			double t = (double)((int64_t)gettime_ms() - fade_start) / tofi.fade_in_ms;
+			if (t >= 1) {
+				t = 1;
+				fade_start = -1;
+			}
+			fade_alpha = ease_out_cubic(t);
+			wp_alpha_modifier_surface_v1_set_multiplier(
+					tofi.alpha_surface,
+					(uint32_t)(fade_alpha * UINT32_MAX));
+			if (!tofi.window.surface.redraw) {
+				wl_surface_commit(tofi.window.surface.wl_surface);
+			}
+		}
 
 		/*
 		 * sway patch: blink. Anything that redraws (typing) shows the
@@ -2027,6 +2095,42 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	/*
+	 * sway patch: --fade-out=MS. Whatever ended the menu (a pick after any
+	 * linger, Escape, SIGTERM), fade from the current opacity to nothing,
+	 * like SwayFX closing a window (lerp(1, 0, ease_out_cubic(t))) --
+	 * unless another surface already took the keyboard (the next menu, the
+	 * app a pick launched): then go at once, as --linger does. stdout
+	 * closes first, so the reader isn't kept waiting.
+	 */
+	if (tofi.fade_out_ms > 0 && tofi.alpha_surface != NULL && !tofi.keyboard_left) {
+		fflush(stdout);
+		close(STDOUT_FILENO);
+		tofi.window.entry.lingering = true; /* keys go nowhere */
+		double from = fade_alpha;
+		int64_t start = gettime_ms();
+		while (!tofi.keyboard_left) {
+			double t = (double)((int64_t)gettime_ms() - start) / tofi.fade_out_ms;
+			if (t >= 1) {
+				break;
+			}
+			wp_alpha_modifier_surface_v1_set_multiplier(
+					tofi.alpha_surface,
+					(uint32_t)(from * (1 - ease_out_cubic(t)) * UINT32_MAX));
+			wl_surface_commit(tofi.window.surface.wl_surface);
+			wl_display_flush(tofi.wl_display);
+			struct pollfd pfd = {
+				.fd = wl_display_get_fd(tofi.wl_display),
+				.events = POLLIN
+			};
+			if (poll(&pfd, 1, FADE_TICK) > 0) {
+				if (wl_display_dispatch(tofi.wl_display) < 0) {
+					break;
+				}
+			}
+		}
+	}
+
 	log_debug("Window closed, performing cleanup.\n");
 #ifdef DEBUG
 	/*
@@ -2068,6 +2172,12 @@ int main(int argc, char *argv[])
 	wl_shm_destroy(tofi.wl_shm);
 	if (tofi.wp_fractional_scale_manager != NULL) {
 		wp_fractional_scale_manager_v1_destroy(tofi.wp_fractional_scale_manager);
+	}
+	if (tofi.alpha_surface != NULL) {
+		wp_alpha_modifier_surface_v1_destroy(tofi.alpha_surface);
+	}
+	if (tofi.wp_alpha_modifier != NULL) {
+		wp_alpha_modifier_v1_destroy(tofi.wp_alpha_modifier);
 	}
 	if (tofi.wp_viewporter != NULL) {
 		wp_viewporter_destroy(tofi.wp_viewporter);

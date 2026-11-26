@@ -673,6 +673,16 @@ bool parse_option(struct tofi *tofi, const char *filename, size_t lineno, const 
 			tofi->window.entry.box_height = percent.value;
 			tofi->window.entry.box_height_is_percent = percent.percent;
 		}
+	} else if (strcasecmp(option, "fade-in") == 0) { /* sway patch */
+		uint32_t val = parse_uint32(filename, lineno, value, &err);
+		if (!err) {
+			tofi->fade_in_ms = val;
+		}
+	} else if (strcasecmp(option, "fade-out") == 0) { /* sway patch */
+		uint32_t val = parse_uint32(filename, lineno, value, &err);
+		if (!err) {
+			tofi->fade_out_ms = val;
+		}
 	} else if (strcasecmp(option, "linger") == 0) { /* sway patch */
 		uint32_t val = parse_uint32(filename, lineno, value, &err);
 		if (!err) {

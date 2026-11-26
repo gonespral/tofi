@@ -11,6 +11,7 @@
 #include "surface.h"
 #include "wlr-layer-shell-unstable-v1.h"
 #include "fractional-scale-v1.h"
+#include "alpha-modifier-v1.h" /* sway patch: --fade-in/--fade-out */
 
 #define MAX_OUTPUT_NAME_LEN 256
 #define MAX_TERMINAL_NAME_LEN 256
@@ -100,6 +101,10 @@ struct tofi {
 	bool fuzzy_match;
 	bool require_match;
 	uint32_t linger_ms;  /* sway patch: see --linger in main.c */
+	uint32_t fade_in_ms;  /* sway patch: see --fade-in in main.c */
+	uint32_t fade_out_ms; /* sway patch: see --fade-out in main.c */
+	struct wp_alpha_modifier_v1 *wp_alpha_modifier;
+	struct wp_alpha_modifier_surface_v1 *alpha_surface;
 	bool linger_cancel;
 	bool keyboard_left;   /* sway patch: wl_keyboard.leave seen (--linger) */
 	char hover_file[MAX_HISTORY_FILE_NAME_LEN]; /* sway patch: --hover-file */
