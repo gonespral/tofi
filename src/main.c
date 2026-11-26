@@ -193,7 +193,10 @@ static void wl_keyboard_leave(
 		uint32_t serial,
 		struct wl_surface *surface)
 {
-	/* Deliberately left blank */
+	/* sway patch: a lingering tofi ends when another surface (the next
+	 * menu) takes the keyboard. */
+	struct tofi *tofi = data;
+	tofi->keyboard_left = true;
 }
 
 static void wl_keyboard_key(
@@ -205,6 +208,11 @@ static void wl_keyboard_key(
 		uint32_t state)
 {
 	struct tofi *tofi = data;
+
+	/* sway patch: lingering after a pick -- keys go nowhere. */
+	if (tofi->window.entry.lingering) {
+		return;
+	}
 
 	/*
 	 * If this wasn't a keypress (i.e. was a key release), just update key
@@ -918,6 +926,8 @@ const struct option long_options[] = {
 	{"box-width", required_argument, NULL, 0}, /* sway patch */
 	{"box-height", required_argument, NULL, 0},
 	{"dim-color", required_argument, NULL, 0},
+	{"linger", required_argument, NULL, 0},
+	{"linger-cancel", required_argument, NULL, 0},
 	{"horizontal", required_argument, NULL, 0},
 	{"hide-cursor", required_argument, NULL, 0},
 	{"history", required_argument, NULL, 0},
@@ -1751,6 +1761,7 @@ int main(int argc, char *argv[])
 	 * order of the various functions called here.
 	 */
 	int64_t blink_next = 0; /* sway patch */
+	bool submitted = false;
 	int64_t marquee_next = 0;
 	int marquee_dir = 1; /* 1 = towards the end, -1 = back */
 	uint32_t mq_sel = UINT32_MAX, mq_first = UINT32_MAX, mq_len = UINT32_MAX;
@@ -1923,10 +1934,46 @@ int main(int argc, char *argv[])
 		if (tofi.submit) {
 			tofi.submit = false;
 			if (do_submit(&tofi)) {
+				submitted = true;
 				break;
 			}
 		}
 
+	}
+
+	/*
+	 * sway patch: --linger=MS. After a pick (or Escape too, with
+	 * --linger-cancel=true), hand the result over at once -- stdout is
+	 * closed, so a reader sees EOF -- but stay up as plain background (the
+	 * dim), still holding the keyboard (keys ignored), until another
+	 * surface takes it -- the next menu mapping over us, at which point
+	 * the compositor sends wl_keyboard.leave -- or MS pass. So between a
+	 * menu and its submenu there is always exactly one dim on screen.
+	 */
+	if (tofi.linger_ms > 0 && (submitted || tofi.linger_cancel)) {
+		fflush(stdout);
+		close(STDOUT_FILENO);
+		tofi.window.entry.lingering = true;
+		tofi.keyboard_left = false;
+		entry_update(&tofi.window.entry);
+		surface_draw(&tofi.window.surface);
+		int64_t end = (int64_t)gettime_ms() + tofi.linger_ms;
+		while (!tofi.keyboard_left) {
+			wl_display_flush(tofi.wl_display);
+			int64_t wait = end - (int64_t)gettime_ms();
+			if (wait <= 0) {
+				break;
+			}
+			struct pollfd pfd = {
+				.fd = wl_display_get_fd(tofi.wl_display),
+				.events = POLLIN
+			};
+			if (poll(&pfd, 1, (int)wait) > 0) {
+				if (wl_display_dispatch(tofi.wl_display) < 0) {
+					break;
+				}
+			}
+		}
 	}
 
 	log_debug("Window closed, performing cleanup.\n");

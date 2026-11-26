@@ -673,6 +673,16 @@ bool parse_option(struct tofi *tofi, const char *filename, size_t lineno, const 
 			tofi->window.entry.box_height = percent.value;
 			tofi->window.entry.box_height_is_percent = percent.percent;
 		}
+	} else if (strcasecmp(option, "linger") == 0) { /* sway patch */
+		uint32_t val = parse_uint32(filename, lineno, value, &err);
+		if (!err) {
+			tofi->linger_ms = val;
+		}
+	} else if (strcasecmp(option, "linger-cancel") == 0) {
+		bool val = parse_bool(filename, lineno, value, &err);
+		if (!err) {
+			tofi->linger_cancel = val;
+		}
 	} else if (strcasecmp(option, "dim-color") == 0) {
 		struct color val = parse_color(filename, lineno, value, &err);
 		if (!err) {

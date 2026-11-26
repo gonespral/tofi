@@ -306,8 +306,10 @@ void entry_update(struct entry *entry)
 	cairo_paint(cr);
 	cairo_restore(cr);
 
-	/* Draw our text. */
-	if (entry->use_pango) {
+	/* Draw our text (sway patch: none while lingering). */
+	if (entry->lingering) {
+		/* nothing */
+	} else if (entry->use_pango) {
 		entry_backend_pango_update(entry);
 	} else {
 		entry_backend_harfbuzz_update(entry);

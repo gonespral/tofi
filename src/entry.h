@@ -94,6 +94,7 @@ struct entry {
 	bool horizontal;
 	bool hide_input;
 	bool blink_off; /* sway patch: cursor hidden in this blink phase */
+	bool lingering; /* sway patch: drawing only the background (--linger) */
 	double marquee_offset; /* sway patch: highlighted result scrolled by (px) */
 	double marquee_max;    /* its overflow past the window edge, 0 = fits */
 	char hidden_character_utf8[6];

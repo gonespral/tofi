@@ -99,6 +99,9 @@ struct tofi {
 	bool drun_print_exec;
 	bool fuzzy_match;
 	bool require_match;
+	uint32_t linger_ms;  /* sway patch: see --linger in main.c */
+	bool linger_cancel;
+	bool keyboard_left;   /* sway patch: wl_keyboard.leave seen (--linger) */
 	bool auto_accept_single;
 	bool multiple_instance;
 	char target_output_name[MAX_OUTPUT_NAME_LEN];
