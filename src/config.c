@@ -661,6 +661,23 @@ bool parse_option(struct tofi *tofi, const char *filename, size_t lineno, const 
 			tofi->window.entry.padding_right = percent.value;
 			tofi->window.entry.padding_right_is_percent = percent.percent;
 		}
+	} else if (strcasecmp(option, "box-width") == 0) { /* sway patch */
+		percent = parse_uint32_percent(filename, lineno, value, &err);
+		if (!err) {
+			tofi->window.entry.box_width = percent.value;
+			tofi->window.entry.box_width_is_percent = percent.percent;
+		}
+	} else if (strcasecmp(option, "box-height") == 0) {
+		percent = parse_uint32_percent(filename, lineno, value, &err);
+		if (!err) {
+			tofi->window.entry.box_height = percent.value;
+			tofi->window.entry.box_height_is_percent = percent.percent;
+		}
+	} else if (strcasecmp(option, "dim-color") == 0) {
+		struct color val = parse_color(filename, lineno, value, &err);
+		if (!err) {
+			tofi->window.entry.dim_color = val;
+		}
 	} else if (strcasecmp(option, "clip-to-padding") == 0) {
 		bool val = parse_bool(filename, lineno, value, &err);
 		if (!err) {

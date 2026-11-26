@@ -915,6 +915,9 @@ const struct option long_options[] = {
 	{"padding-left", required_argument, NULL, 0},
 	{"padding-right", required_argument, NULL, 0},
 	{"clip-to-padding", required_argument, NULL, 0},
+	{"box-width", required_argument, NULL, 0}, /* sway patch */
+	{"box-height", required_argument, NULL, 0},
+	{"dim-color", required_argument, NULL, 0},
 	{"horizontal", required_argument, NULL, 0},
 	{"hide-cursor", required_argument, NULL, 0},
 	{"history", required_argument, NULL, 0},

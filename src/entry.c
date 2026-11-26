@@ -88,8 +88,34 @@ void entry_init(struct entry *entry, uint8_t *restrict buffer, uint32_t width, u
 	height = scale_apply_inverse(height, fractional_scale_numerator);
 
 	log_debug("Drawing window.\n");
+	struct color color;
+	/*
+	 * sway patch: box mode -- dim the whole window, then make the rest of
+	 * the drawing (background, border, clip, text) happen in a centred box.
+	 */
+	bool box = entry->box_width > 0;
+	if (box) {
+		uint32_t bw = entry->box_width_is_percent
+			? width * entry->box_width / 100 : entry->box_width;
+		uint32_t bh = entry->box_height == 0 ? height
+			: entry->box_height_is_percent
+			? height * entry->box_height / 100 : entry->box_height;
+		bw = MIN(bw, width);
+		bh = MIN(bh, height);
+		color = entry->dim_color;
+		cairo_set_source_rgba(cr, color.r, color.g, color.b, color.a);
+		cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
+		cairo_paint(cr);
+		cairo_translate(cr, floor((width - bw) / 2.0), floor((height - bh) / 2.0));
+		width = bw;
+		height = bh;
+		cairo_save(cr);
+		cairo_rectangle(cr, 0, 0, width, height);
+		cairo_clip(cr);
+	}
+
 	/* Draw the background */
-	struct color color = entry->background_color;
+	color = entry->background_color;
 	cairo_set_source_rgba(cr, color.r, color.g, color.b, color.a);
 	cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
 	cairo_paint(cr);
@@ -128,6 +154,9 @@ void entry_init(struct entry *entry, uint8_t *restrict buffer, uint32_t width, u
 	cairo_restore(cr);
 
 	cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+	if (box) {
+		cairo_restore(cr); /* sway patch: the box clip (keeps the translate) */
+	}
 
 
 	/* Move and clip following draws to be within this outline */

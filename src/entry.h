@@ -119,6 +119,16 @@ struct entry {
 	bool padding_left_is_percent;
 	bool padding_right_is_percent;
 	bool clip_to_padding;
+	/*
+	 * sway patch: box mode. With box_width set, the window (e.g. fullscreen)
+	 * is painted dim_color and the menu -- background, border, text -- is a
+	 * centred box_width x box_height inside it (px, or % of the window).
+	 */
+	uint32_t box_width;
+	uint32_t box_height;
+	bool box_width_is_percent;
+	bool box_height_is_percent;
+	struct color dim_color;
 	uint32_t input_width;
 	uint32_t border_width;
 	uint32_t outline_width;
