@@ -96,6 +96,17 @@ struct entry {
 	bool blink_off; /* sway patch: cursor hidden in this blink phase */
 	bool lingering; /* sway patch: drawing only the background (--linger) */
 	double marquee_offset; /* sway patch: highlighted result scrolled by (px) */
+	/*
+	 * sway patch: mouse. Where the last frame put things, in buffer pixels:
+	 * the top of each drawn result and the step between them, and the box
+	 * (whole window without box mode). px_scale = buffer px per surface px.
+	 */
+#define TOFI_MAX_ROWS 256
+	double row_top[TOFI_MAX_ROWS];
+	double row_pitch;
+	uint32_t rows_known;
+	double box_x0, box_y0, box_x1, box_y1;
+	double px_scale;
 	double marquee_max;    /* its overflow past the window edge, 0 = fits */
 	char hidden_character_utf8[6];
 	uint8_t hidden_character_utf8_length;

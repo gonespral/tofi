@@ -12,6 +12,7 @@
 #include "wlr-layer-shell-unstable-v1.h"
 #include "fractional-scale-v1.h"
 #include "alpha-modifier-v1.h" /* sway patch: --fade-in/--fade-out */
+#include "cursor-shape-v1.h"   /* sway patch: mouse */
 
 #define MAX_OUTPUT_NAME_LEN 256
 #define MAX_TERMINAL_NAME_LEN 256
@@ -105,6 +106,11 @@ struct tofi {
 	uint32_t fade_out_ms; /* sway patch: see --fade-out in main.c */
 	struct wp_alpha_modifier_v1 *wp_alpha_modifier;
 	struct wp_alpha_modifier_surface_v1 *alpha_surface;
+	/* sway patch: mouse -- pointer position (surface px), wheel remainder. */
+	struct wp_cursor_shape_manager_v1 *cursor_shape_manager;
+	struct wp_cursor_shape_device_v1 *cursor_shape_device;
+	double pointer_x, pointer_y;
+	double scroll_acc;
 	bool linger_cancel;
 	bool keyboard_left;   /* sway patch: wl_keyboard.leave seen (--linger) */
 	char hover_file[MAX_HISTORY_FILE_NAME_LEN]; /* sway patch: --hover-file */

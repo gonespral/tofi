@@ -69,6 +69,7 @@ void entry_init(struct entry *entry, uint8_t *restrict buffer, uint32_t width, u
 			);
 	cairo_surface_set_device_scale(surface, scale, scale);
 	cairo_t *cr = cairo_create(surface);
+	entry->px_scale = scale; /* sway patch: mouse */
 
 	entry->cairo[0].surface = surface;
 	entry->cairo[0].cr = cr;
@@ -107,11 +108,21 @@ void entry_init(struct entry *entry, uint8_t *restrict buffer, uint32_t width, u
 		cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
 		cairo_paint(cr);
 		cairo_translate(cr, floor((width - bw) / 2.0), floor((height - bh) / 2.0));
+		/* sway patch: mouse -- the box, in buffer px (outside = click to close). */
+		entry->box_x0 = 0; entry->box_y0 = 0;
+		entry->box_x1 = bw; entry->box_y1 = bh;
+		cairo_user_to_device(cr, &entry->box_x0, &entry->box_y0);
+		cairo_user_to_device(cr, &entry->box_x1, &entry->box_y1);
 		width = bw;
 		height = bh;
 		cairo_save(cr);
 		cairo_rectangle(cr, 0, 0, width, height);
 		cairo_clip(cr);
+	}
+
+	if (!box) { /* sway patch: mouse -- no box: the whole window */
+		entry->box_x0 = 0; entry->box_y0 = 0;
+		entry->box_x1 = width * scale; entry->box_y1 = height * scale;
 	}
 
 	/* Draw the background */

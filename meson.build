@@ -183,7 +183,9 @@ wl_proto_xml = [
   wayland_protocols_dir + '/stable/viewporter/viewporter.xml',
   'protocols/wlr-layer-shell-unstable-v1.xml',
   'protocols/fractional-scale-v1.xml',
-  wayland_protocols_dir + '/staging/alpha-modifier/alpha-modifier-v1.xml'
+  wayland_protocols_dir + '/staging/alpha-modifier/alpha-modifier-v1.xml',
+  wayland_protocols_dir + '/unstable/tablet/tablet-unstable-v2.xml',
+  wayland_protocols_dir + '/staging/cursor-shape/cursor-shape-v1.xml'
 ]
 
 foreach proto : wl_proto_xml

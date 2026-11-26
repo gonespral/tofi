@@ -5,6 +5,7 @@
 #include <locale.h>
 #include <poll.h>
 #include <signal.h>
+#include <linux/input-event-codes.h>
 #define BLINK_MS 530 /* sway patch: cursor blink half-period, like GTK */
 #define FADE_TICK 16 /* sway patch: --fade-in/--fade-out step, ms */
 /* sway patch: --fade-out -- SIGTERM (menu-tofi.sh close) closes with a fade. */
@@ -305,10 +306,48 @@ static void wl_pointer_enter(
 		wl_fixed_t surface_y)
 {
 	struct tofi *tofi = data;
+	tofi->pointer_x = wl_fixed_to_double(surface_x); /* sway patch: mouse */
+	tofi->pointer_y = wl_fixed_to_double(surface_y);
 	if (tofi->hide_cursor) {
 		/* Hide the cursor by setting its surface to NULL. */
 		wl_pointer_set_cursor(tofi->wl_pointer, serial, NULL, 0, 0);
+	} else if (tofi->cursor_shape_manager != NULL) {
+		/* sway patch: a normal arrow (was: whatever image was last set). */
+		if (tofi->cursor_shape_device == NULL) {
+			tofi->cursor_shape_device = wp_cursor_shape_manager_v1_get_pointer(
+					tofi->cursor_shape_manager, pointer);
+		}
+		wp_cursor_shape_device_v1_set_shape(tofi->cursor_shape_device, serial,
+				WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT);
 	}
+}
+
+/*
+ * sway patch: mouse. The visible result under the pointer (index into the
+ * drawn page), -1 if none; and whether the pointer is inside the box.
+ */
+static int pointer_row(struct tofi *tofi)
+{
+	struct entry *e = &tofi->window.entry;
+	double y = tofi->pointer_y * e->px_scale;
+	double x = tofi->pointer_x * e->px_scale;
+	if (e->rows_known == 0 || e->row_pitch <= 0
+			|| x < e->box_x0 || x >= e->box_x1) {
+		return -1;
+	}
+	for (uint32_t i = 0; i < e->rows_known; i++) {
+		if (y >= e->row_top[i] && y < e->row_top[i] + e->row_pitch) {
+			return (int)i;
+		}
+	}
+	return -1;
+}
+
+static bool pointer_in_box(struct tofi *tofi)
+{
+	struct entry *e = &tofi->window.entry;
+	double x = tofi->pointer_x * e->px_scale, y = tofi->pointer_y * e->px_scale;
+	return x >= e->box_x0 && x < e->box_x1 && y >= e->box_y0 && y < e->box_y1;
 }
 
 static void wl_pointer_leave(
@@ -327,7 +366,18 @@ static void wl_pointer_motion(
 		wl_fixed_t surface_x,
 		wl_fixed_t surface_y)
 {
-	/* Deliberately left blank */
+	/* sway patch: mouse -- moving over a result highlights it. */
+	struct tofi *tofi = data;
+	tofi->pointer_x = wl_fixed_to_double(surface_x);
+	tofi->pointer_y = wl_fixed_to_double(surface_y);
+	if (tofi->window.entry.lingering) {
+		return;
+	}
+	int row = pointer_row(tofi);
+	if (row >= 0 && (uint32_t)row != tofi->window.entry.selection) {
+		tofi->window.entry.selection = (uint32_t)row;
+		tofi->window.surface.redraw = true;
+	}
 }
 
 static void wl_pointer_button(
@@ -338,7 +388,27 @@ static void wl_pointer_button(
 		uint32_t button,
 		enum wl_pointer_button_state state)
 {
-	/* Deliberately left blank */
+	/*
+	 * sway patch: mouse. Left click on a result = pick it (Enter); a
+	 * click outside the box = close (Escape).
+	 */
+	struct tofi *tofi = data;
+	if (state != WL_POINTER_BUTTON_STATE_PRESSED || tofi->window.entry.lingering) {
+		return;
+	}
+	if (!pointer_in_box(tofi)) {
+		tofi->closed = true;
+		return;
+	}
+	if (button != BTN_LEFT) {
+		return;
+	}
+	int row = pointer_row(tofi);
+	if (row >= 0) {
+		tofi->window.entry.selection = (uint32_t)row;
+		tofi->window.surface.redraw = true;
+		tofi->submit = true;
+	}
 }
 
 static void wl_pointer_axis(
@@ -348,7 +418,22 @@ static void wl_pointer_axis(
 		enum wl_pointer_axis axis,
 		wl_fixed_t value)
 {
-	/* Deliberately left blank */
+	/* sway patch: mouse -- the wheel moves the highlight (~10 per notch). */
+	struct tofi *tofi = data;
+	if (axis != WL_POINTER_AXIS_VERTICAL_SCROLL || tofi->window.entry.lingering) {
+		return;
+	}
+	tofi->scroll_acc += wl_fixed_to_double(value);
+	while (tofi->scroll_acc >= 10) {
+		input_select_next(tofi);
+		tofi->scroll_acc -= 10;
+		tofi->window.surface.redraw = true;
+	}
+	while (tofi->scroll_acc <= -10) {
+		input_select_previous(tofi);
+		tofi->scroll_acc += 10;
+		tofi->window.surface.redraw = true;
+	}
 }
 
 static void wl_pointer_frame(void *data, struct wl_pointer *pointer)
@@ -739,6 +824,14 @@ static void registry_global(
 				&wp_fractional_scale_manager_v1_interface,
 				1);
 		log_debug("Bound to wp_fractional_scale_manager_v1 %u.\n", name);
+	} else if (!strcmp(interface, wp_cursor_shape_manager_v1_interface.name)) {
+		/* sway patch: mouse -- a normal arrow over the menu */
+		tofi->cursor_shape_manager = wl_registry_bind(
+				wl_registry,
+				name,
+				&wp_cursor_shape_manager_v1_interface,
+				1);
+		log_debug("Bound to wp_cursor_shape_manager_v1 %u.\n", name);
 	} else if (!strcmp(interface, wp_alpha_modifier_v1_interface.name)) {
 		/* sway patch: --fade-in/--fade-out */
 		tofi->wp_alpha_modifier = wl_registry_bind(

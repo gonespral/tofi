@@ -339,6 +339,10 @@ void paste(struct tofi *tofi)
  * leaves the visible rows. Both ends wrap: Down on the last result goes to
  * the first, Up on the first to the last.
  */
+/* sway patch: mouse -- the wheel steps like Up / Down. */
+void input_select_previous(struct tofi *tofi) { select_previous_result(tofi); }
+void input_select_next(struct tofi *tofi) { select_next_result(tofi); }
+
 void select_previous_result(struct tofi *tofi)
 {
 	struct entry *entry = &tofi->window.entry;

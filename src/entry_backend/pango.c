@@ -544,6 +544,15 @@ void entry_backend_pango_update(struct entry *entry)
 		if (index >= entry->results.count) {
 			break;
 		}
+		/* sway patch: mouse -- where this row is, in buffer px. */
+		if (i < TOFI_MAX_ROWS && !entry->horizontal) {
+			double rx = 0, ry = 0;
+			cairo_user_to_device(cr, &rx, &ry);
+			entry->row_top[i] = ry;
+			if (i == 1) {
+				entry->row_pitch = ry - entry->row_top[0];
+			}
+		}
 
 		const char *str;
 		if (i < entry->results.count) {
@@ -678,6 +687,11 @@ void entry_backend_pango_update(struct entry *entry)
 		}
 	}
 	entry->num_results_drawn = i;
+	/* sway patch: mouse -- rows drawn; one row: its own height as the step. */
+	entry->rows_known = entry->horizontal ? 0 : MIN(i, TOFI_MAX_ROWS);
+	if (entry->rows_known == 1) {
+		entry->row_pitch = (logical_rect.height + entry->result_spacing) * entry->px_scale;
+	}
 	log_debug("Drew %zu results.\n", i);
 
 	pango_layout_set_width(layout, -1);
