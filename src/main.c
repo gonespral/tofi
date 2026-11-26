@@ -3,12 +3,14 @@
 #include <getopt.h>
 #include <locale.h>
 #include <poll.h>
+#define BLINK_MS 530 /* sway patch: cursor blink half-period, like GTK */
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <threads.h>
+#include <time.h>
 #include <unistd.h>
 #include <wayland-client.h>
 #include <wayland-util.h>
@@ -1739,6 +1741,7 @@ int main(int argc, char *argv[])
 	 * See the wl_display(3) man page for an explanation of the
 	 * order of the various functions called here.
 	 */
+	int64_t blink_next = 0; /* sway patch */
 	while (!tofi.closed) {
 		struct pollfd pollfds[2] = {{0}, {0}};
 		pollfds[0].fd = wl_display_get_fd(tofi.wl_display);
@@ -1765,6 +1768,19 @@ int main(int argc, char *argv[])
 				timeout = wait;
 			} else {
 				timeout = 0;
+			}
+		}
+		/* sway patch: wake up for the cursor's next blink. */
+		if (blink_next == 0) {
+			blink_next = gettime_ms() + BLINK_MS;
+		}
+		{
+			int64_t wait = blink_next - (int64_t)gettime_ms();
+			if (wait < 0) {
+				wait = 0;
+			}
+			if (timeout < 0 || wait < timeout) {
+				timeout = wait;
 			}
 		}
 
@@ -1826,6 +1842,19 @@ int main(int argc, char *argv[])
 
 		/* Handle any events we read. */
 		wl_display_dispatch_pending(tofi.wl_display);
+
+		/*
+		 * sway patch: blink. Anything that redraws (typing) shows the
+		 * cursor and restarts the phase; otherwise toggle it on time.
+		 */
+		if (tofi.window.surface.redraw) {
+			tofi.window.entry.blink_off = false;
+			blink_next = gettime_ms() + BLINK_MS;
+		} else if ((int64_t)gettime_ms() >= blink_next) {
+			tofi.window.entry.blink_off = !tofi.window.entry.blink_off;
+			blink_next = gettime_ms() + BLINK_MS;
+			tofi.window.surface.redraw = true;
+		}
 
 		if (tofi.window.surface.redraw) {
 			entry_update(&tofi.window.entry);

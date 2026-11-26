@@ -93,6 +93,7 @@ struct entry {
 	bool drun;
 	bool horizontal;
 	bool hide_input;
+	bool blink_off; /* sway patch: cursor hidden in this blink phase */
 	char hidden_character_utf8[6];
 	uint8_t hidden_character_utf8_length;
 	uint32_t num_results;

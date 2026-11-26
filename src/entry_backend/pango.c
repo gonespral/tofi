@@ -110,7 +110,8 @@ static void render_input(
 		uint32_t cursor_position,
 		const struct cursor_theme *cursor_theme,
 		PangoRectangle *ink_rect,
-		PangoRectangle *logical_rect)
+		PangoRectangle *logical_rect,
+		bool blink_off)
 {
 	struct directional padding = theme->padding;
 	struct color color = theme->foreground_color;
@@ -163,7 +164,7 @@ static void render_input(
 		pango_cairo_show_layout(cr, layout);
 	}
 
-	if (!cursor_theme->show) {
+	if (!cursor_theme->show || blink_off) {
 		/* No cursor to draw, we're done. */
 		return;
 	}
@@ -339,7 +340,8 @@ void entry_backend_pango_update(struct entry *entry)
 				0,
 				&entry->cursor_theme,
 				&ink_rect,
-				&logical_rect);
+				&logical_rect,
+				entry->blink_off);
 	} else if (entry->hide_input) {
 		size_t nchars = entry->input_utf32_length;
 		size_t char_size = entry->hidden_character_utf8_length;
@@ -360,7 +362,8 @@ void entry_backend_pango_update(struct entry *entry)
 				entry->cursor_position,
 				&entry->cursor_theme,
 				&ink_rect,
-				&logical_rect);
+				&logical_rect,
+				entry->blink_off);
 		free(buf);
 	} else {
 		render_input(
@@ -372,7 +375,8 @@ void entry_backend_pango_update(struct entry *entry)
 				entry->cursor_position,
 				&entry->cursor_theme,
 				&ink_rect,
-				&logical_rect);
+				&logical_rect,
+				entry->blink_off);
 	}
 	logical_rect.width = MAX(logical_rect.width, (int)entry->input_width);
 
