@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <getopt.h>
 #include <locale.h>
 #include <poll.h>
@@ -928,6 +929,7 @@ const struct option long_options[] = {
 	{"dim-color", required_argument, NULL, 0},
 	{"linger", required_argument, NULL, 0},
 	{"linger-cancel", required_argument, NULL, 0},
+	{"hover-file", required_argument, NULL, 0},
 	{"live-prefix", required_argument, NULL, 0},
 	{"live-cmd", required_argument, NULL, 0},
 	{"selection", required_argument, NULL, 0},
@@ -1781,6 +1783,17 @@ int main(int argc, char *argv[])
 	 * order of the various functions called here.
 	 */
 	int64_t blink_next = 0; /* sway patch */
+	/*
+	 * sway patch: --hover-file=PATH (a FIFO). The highlighted result, as
+	 * a line, whenever it changes -- the first one included -- for live
+	 * previews. O_RDWR so opening never waits for (or fails without) a
+	 * reader; O_NONBLOCK so a slow reader can't stall us (lines dropped).
+	 */
+	int hover_fd = -1;
+	char *hover_last = NULL;
+	if (tofi.hover_file[0] != '\0') {
+		hover_fd = open(tofi.hover_file, O_RDWR | O_NONBLOCK | O_CLOEXEC);
+	}
 	bool submitted = false;
 	int64_t marquee_next = 0;
 	int marquee_dir = 1; /* 1 = towards the end, -1 = back */
@@ -1950,6 +1963,24 @@ int main(int argc, char *argv[])
 			entry_update(&tofi.window.entry);
 			surface_draw(&tofi.window.surface);
 			tofi.window.surface.redraw = false;
+		}
+		if (hover_fd >= 0) { /* sway patch: see --hover-file above */
+			struct entry *e = &tofi.window.entry;
+			size_t at = e->first_result + e->selection;
+			const char *cur = at < e->results.count ? e->results.buf[at].string : "";
+			if (hover_last == NULL || strcmp(cur, hover_last) != 0) {
+				free(hover_last);
+				hover_last = strdup(cur);
+				size_t len = strlen(cur);
+				char *line = malloc(len + 2);
+				if (line != NULL) {
+					memcpy(line, cur, len);
+					line[len] = '\n';
+					ssize_t w = write(hover_fd, line, len + 1);
+					(void)w;
+					free(line);
+				}
+			}
 		}
 		if (tofi.submit) {
 			tofi.submit = false;

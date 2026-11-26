@@ -102,6 +102,7 @@ struct tofi {
 	uint32_t linger_ms;  /* sway patch: see --linger in main.c */
 	bool linger_cancel;
 	bool keyboard_left;   /* sway patch: wl_keyboard.leave seen (--linger) */
+	char hover_file[MAX_HISTORY_FILE_NAME_LEN]; /* sway patch: --hover-file */
 	char live_prefix[16];                         /* sway patch: --live-prefix */
 	char live_cmd[MAX_HISTORY_FILE_NAME_LEN];     /* sway patch: --live-cmd */
 	uint32_t start_selection; /* sway patch: --selection=N */

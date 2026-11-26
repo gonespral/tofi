@@ -717,6 +717,8 @@ bool parse_option(struct tofi *tofi, const char *filename, size_t lineno, const 
 		snprintf(tofi->live_prefix, N_ELEM(tofi->live_prefix), "%s", value);
 	} else if (strcasecmp(option, "live-cmd") == 0) {
 		snprintf(tofi->live_cmd, N_ELEM(tofi->live_cmd), "%s", value);
+	} else if (strcasecmp(option, "hover-file") == 0) { /* sway patch */
+		snprintf(tofi->hover_file, N_ELEM(tofi->hover_file), "%s", value);
 	} else if (strcasecmp(option, "history-file") == 0) {
 		snprintf(tofi->history_file, N_ELEM(tofi->history_file), "%s", value);
 	} else if (strcasecmp(option, "fuzzy-match") == 0) {
