@@ -329,6 +329,14 @@ void entry_backend_pango_update(struct entry *entry)
 	cairo_translate(cr, logical_rect.width + logical_rect.x, 0);
 	cairo_translate(cr, entry->prompt_padding, 0);
 
+	/* sway patch: room left of the window's right edge (input, results). */
+	cairo_matrix_t room_mat;
+	cairo_get_matrix(cr, &room_mat);
+	double room = (double)entry->clip_x + entry->clip_width - room_mat.x0;
+	if (entry->horizontal || room <= 0) {
+		room = 0;
+	}
+
 	/* Render the entry text */
 	if (entry->input_utf8_length == 0) {
 		render_input(
@@ -389,6 +397,12 @@ void entry_backend_pango_update(struct entry *entry)
 	} else {
 		num_results = MIN(entry->num_results, entry->results.count);
 	}
+	/* sway patch: long results end in "…" instead of being cut off. */
+	if (room > 0) {
+		pango_layout_set_width(layout, (int)(room * PANGO_SCALE));
+		pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END);
+	}
+
 	/* Render our results */
 	size_t i;
 	for (i = 0; i < num_results; i++) {
@@ -547,6 +561,9 @@ void entry_backend_pango_update(struct entry *entry)
 	}
 	entry->num_results_drawn = i;
 	log_debug("Drew %zu results.\n", i);
+
+	pango_layout_set_width(layout, -1);
+	pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_NONE);
 
 	cairo_restore(cr);
 }
