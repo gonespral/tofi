@@ -928,6 +928,8 @@ const struct option long_options[] = {
 	{"dim-color", required_argument, NULL, 0},
 	{"linger", required_argument, NULL, 0},
 	{"linger-cancel", required_argument, NULL, 0},
+	{"live-prefix", required_argument, NULL, 0},
+	{"live-cmd", required_argument, NULL, 0},
 	{"selection", required_argument, NULL, 0},
 	{"horizontal", required_argument, NULL, 0},
 	{"hide-cursor", required_argument, NULL, 0},

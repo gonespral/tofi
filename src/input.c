@@ -1,3 +1,7 @@
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/input-event-codes.h>
@@ -21,6 +25,7 @@ static void select_next_page(struct tofi *tofi);
 static void next_cursor_or_result(struct tofi *tofi);
 static void previous_cursor_or_result(struct tofi *tofi);
 static void reset_selection(struct tofi *tofi);
+static bool live_refresh(struct tofi *tofi); /* sway patch */
 
 void input_handle_keypress(struct tofi *tofi, xkb_keycode_t keycode)
 {
@@ -147,7 +152,9 @@ void add_character(struct tofi *tofi, xkb_keycode_t keycode)
 				N_ELEM(buf));
 		entry->input_utf8_length += len;
 
-		if (entry->drun) {
+		if (live_refresh(tofi)) {
+			/* sway patch: --live-cmd results */
+		} else if (entry->drun) {
 			struct string_ref_vec results = desktop_vec_filter(&entry->apps, entry->input_utf8, tofi->fuzzy_match);
 			string_ref_vec_destroy(&entry->results);
 			entry->results = results;
@@ -172,6 +179,47 @@ void add_character(struct tofi *tofi, xkb_keycode_t keycode)
 	entry->cursor_position++;
 }
 
+/*
+ * sway patch: --live-prefix=P --live-cmd=CMD. While the input starts with P,
+ * the results are the output lines of `sh -c CMD` (the rest of the input in
+ * $TOFI_LIVE) instead of the filtered list -- e.g. a calculator showing its
+ * answer as you type. The lines are ours (strdup), freed on the next run.
+ */
+static char *live_lines[64];
+static size_t live_n;
+static bool live_refresh(struct tofi *tofi)
+{
+	struct entry *entry = &tofi->window.entry;
+	size_t pl = strlen(tofi->live_prefix);
+	if (pl == 0 || tofi->live_cmd[0] == '\0'
+			|| strncmp(entry->input_utf8, tofi->live_prefix, pl) != 0) {
+		return false;
+	}
+	string_ref_vec_destroy(&entry->results);
+	for (size_t i = 0; i < live_n; i++) {
+		free(live_lines[i]);
+	}
+	live_n = 0;
+	setenv("TOFI_LIVE", entry->input_utf8 + pl, 1);
+	FILE *p = popen(tofi->live_cmd, "r");
+	char buf[1024];
+	while (p != NULL && live_n < 64 && fgets(buf, sizeof(buf), p) != NULL) {
+		buf[strcspn(buf, "\n")] = '\0';
+		if (buf[0] != '\0') {
+			live_lines[live_n++] = strdup(buf);
+		}
+	}
+	if (p != NULL) {
+		pclose(p);
+	}
+	entry->results = string_ref_vec_create();
+	for (size_t i = 0; i < live_n; i++) {
+		string_ref_vec_add(&entry->results, live_lines[i]);
+	}
+	reset_selection(tofi);
+	return true;
+}
+
 void input_refresh_results(struct tofi *tofi)
 {
 	struct entry *entry = &tofi->window.entry;
@@ -184,6 +232,9 @@ void input_refresh_results(struct tofi *tofi)
 	}
 	entry->input_utf8[bytes_written] = '\0';
 	entry->input_utf8_length = bytes_written;
+	if (live_refresh(tofi)) {
+		return;
+	}
 	string_ref_vec_destroy(&entry->results);
 	if (entry->drun) {
 		entry->results = desktop_vec_filter(&entry->apps, entry->input_utf8, tofi->fuzzy_match);
