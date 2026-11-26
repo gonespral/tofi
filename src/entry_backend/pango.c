@@ -345,6 +345,49 @@ static bool size_overflows(struct entry *entry, uint32_t width, uint32_t height)
 }
 
 /*
+ * sway patch: the highlighted result, when longer than ROOM, is drawn whole
+ * (no "…"), clipped to ROOM and shifted left by entry->marquee_offset, which
+ * main.c's marquee timer advances. Others go through as usual.
+ */
+static void render_result(
+		cairo_t *cr,
+		struct entry *entry,
+		const char *str,
+		const struct text_theme *theme,
+		PangoRectangle *ink_rect,
+		PangoRectangle *logical_rect,
+		bool selected,
+		double room)
+{
+	PangoLayout *layout = entry->pango.layout;
+	if (!selected || room <= 0) {
+		render_text_themed(cr, entry, str, theme, ink_rect, logical_rect);
+		return;
+	}
+	pango_layout_set_width(layout, -1);
+	pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_NONE);
+	pango_layout_set_text(layout, str, -1);
+	PangoRectangle ink;
+	PangoRectangle logical;
+	pango_layout_get_pixel_extents(layout, &ink, &logical);
+	if (logical.width <= room) {
+		entry->marquee_max = 0;
+		render_text_themed(cr, entry, str, theme, ink_rect, logical_rect);
+	} else {
+		entry->marquee_max = logical.width - room;
+		double off = MIN(entry->marquee_offset, entry->marquee_max);
+		cairo_save(cr);
+		cairo_rectangle(cr, 0, -logical.height, room, 3 * logical.height);
+		cairo_clip(cr);
+		cairo_translate(cr, -off, 0);
+		render_text_themed(cr, entry, str, theme, ink_rect, logical_rect);
+		cairo_restore(cr);
+	}
+	pango_layout_set_width(layout, (int)(room * PANGO_SCALE));
+	pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END);
+}
+
+/*
  * This is pretty much a direct translation of the corresponding function in
  * the harfbuzz backend. As that's the one that I care about most, there are
  * more explanatory comments than there are here, so go look at that if you
@@ -473,6 +516,7 @@ void entry_backend_pango_update(struct entry *entry)
 
 	/* Render our results */
 	double list_top = -1; /* sway patch: scrollbar */
+	entry->marquee_max = 0; /* set again if the highlighted one overflows */
 	size_t i;
 	for (i = 0; i < num_results; i++) {
 		if (entry->horizontal) {
@@ -518,13 +562,13 @@ void entry_backend_pango_update(struct entry *entry)
 			}
 
 			if (entry->num_results > 0) {
-				render_text_themed(cr, entry, str, theme, &ink_rect, &logical_rect);
+				render_result(cr, entry, str, theme, &ink_rect, &logical_rect, i == entry->selection, room);
 			} else if (!entry->horizontal) {
 				if (size_overflows(entry, 0, logical_rect.height)) {
 					entry->num_results_drawn = i;
 					break;
 				} else {
-					render_text_themed(cr, entry, str, theme, &ink_rect, &logical_rect);
+					render_result(cr, entry, str, theme, &ink_rect, &logical_rect, i == entry->selection, room);
 				}
 			} else {
 				cairo_push_group(cr);

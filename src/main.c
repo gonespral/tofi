@@ -4,6 +4,12 @@
 #include <locale.h>
 #include <poll.h>
 #define BLINK_MS 530 /* sway patch: cursor blink half-period, like GTK */
+/* sway patch: a long highlighted result scrolls MARQUEE_STEP px per
+ * MARQUEE_TICK ms from the moment it's highlighted, back and forth, pausing
+ * MARQUEE_PAUSE ms at each end. */
+#define MARQUEE_STEP 2
+#define MARQUEE_TICK 30
+#define MARQUEE_PAUSE 800
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1742,6 +1748,9 @@ int main(int argc, char *argv[])
 	 * order of the various functions called here.
 	 */
 	int64_t blink_next = 0; /* sway patch */
+	int64_t marquee_next = 0;
+	int marquee_dir = 1; /* 1 = towards the end, -1 = back */
+	uint32_t mq_sel = UINT32_MAX, mq_first = UINT32_MAX, mq_len = UINT32_MAX;
 	while (!tofi.closed) {
 		struct pollfd pollfds[2] = {{0}, {0}};
 		pollfds[0].fd = wl_display_get_fd(tofi.wl_display);
@@ -1776,6 +1785,16 @@ int main(int argc, char *argv[])
 		}
 		{
 			int64_t wait = blink_next - (int64_t)gettime_ms();
+			if (wait < 0) {
+				wait = 0;
+			}
+			if (timeout < 0 || wait < timeout) {
+				timeout = wait;
+			}
+		}
+		/* sway patch: and for the marquee's next step. */
+		if (tofi.window.entry.marquee_max > 0) {
+			int64_t wait = marquee_next - (int64_t)gettime_ms();
 			if (wait < 0) {
 				wait = 0;
 			}
@@ -1854,6 +1873,43 @@ int main(int argc, char *argv[])
 			tofi.window.entry.blink_off = !tofi.window.entry.blink_off;
 			blink_next = gettime_ms() + BLINK_MS;
 			tofi.window.surface.redraw = true;
+		}
+
+		/*
+		 * sway patch: marquee. A different highlighted result (selection,
+		 * page or query changed) starts over at 0 at once; otherwise step
+		 * on, pause at either end and turn round. After the blink check, so
+		 * these redraws don't count as typing.
+		 */
+		{
+			struct entry *e = &tofi.window.entry;
+			int64_t now = gettime_ms();
+			if (e->selection != mq_sel || e->first_result != mq_first
+					|| e->input_utf32_length != mq_len) {
+				mq_sel = e->selection;
+				mq_first = e->first_result;
+				mq_len = e->input_utf32_length;
+				if (e->marquee_offset != 0) {
+					tofi.window.surface.redraw = true;
+				}
+				e->marquee_offset = 0;
+				marquee_dir = 1;
+				marquee_next = now;
+			} else if (e->marquee_max > 0 && now >= marquee_next) {
+				e->marquee_offset += marquee_dir * MARQUEE_STEP;
+				if (e->marquee_offset >= e->marquee_max) {
+					e->marquee_offset = e->marquee_max;
+					marquee_dir = -1;
+					marquee_next = now + MARQUEE_PAUSE;
+				} else if (e->marquee_offset <= 0) {
+					e->marquee_offset = 0;
+					marquee_dir = 1;
+					marquee_next = now + MARQUEE_PAUSE;
+				} else {
+					marquee_next = now + MARQUEE_TICK;
+				}
+				tofi.window.surface.redraw = true;
+			}
 		}
 
 		if (tofi.window.surface.redraw) {
