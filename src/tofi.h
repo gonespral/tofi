@@ -102,6 +102,7 @@ struct tofi {
 	uint32_t linger_ms;  /* sway patch: see --linger in main.c */
 	bool linger_cancel;
 	bool keyboard_left;   /* sway patch: wl_keyboard.leave seen (--linger) */
+	uint32_t start_selection; /* sway patch: --selection=N */
 	bool auto_accept_single;
 	bool multiple_instance;
 	char target_output_name[MAX_OUTPUT_NAME_LEN];

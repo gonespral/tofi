@@ -928,6 +928,7 @@ const struct option long_options[] = {
 	{"dim-color", required_argument, NULL, 0},
 	{"linger", required_argument, NULL, 0},
 	{"linger-cancel", required_argument, NULL, 0},
+	{"selection", required_argument, NULL, 0},
 	{"horizontal", required_argument, NULL, 0},
 	{"hide-cursor", required_argument, NULL, 0},
 	{"history", required_argument, NULL, 0},
@@ -1729,6 +1730,23 @@ int main(int argc, char *argv[])
 
 	/* We've just rendered, so we don't need to do it again right now. */
 	tofi.window.surface.redraw = false;
+
+	/*
+	 * sway patch: --selection=N starts on result N (0-based): a submenu
+	 * past its back item, a menu reopened after an action on that item.
+	 * Applied after the first draw, which tells how many rows fit.
+	 */
+	{
+		struct entry *e = &tofi.window.entry;
+		uint32_t n = tofi.start_selection;
+		if (n > 0 && n < e->results.count) {
+			uint32_t visible = MAX(MIN(e->num_results_drawn, e->results.count), 1);
+			e->first_result = n >= visible ? n - visible + 1 : 0;
+			e->selection = n - e->first_result;
+			e->last_num_results_drawn = e->num_results_drawn;
+			tofi.window.surface.redraw = true;
+		}
+	}
 
 	/* If we delayed keyboard initialisation, do it now */
 	if (tofi.late_keyboard_init) {

@@ -708,6 +708,11 @@ bool parse_option(struct tofi *tofi, const char *filename, size_t lineno, const 
 		if (!err) {
 			tofi->use_history = val;
 		}
+	} else if (strcasecmp(option, "selection") == 0) { /* sway patch */
+		uint32_t val = parse_uint32(filename, lineno, value, &err);
+		if (!err) {
+			tofi->start_selection = val;
+		}
 	} else if (strcasecmp(option, "history-file") == 0) {
 		snprintf(tofi->history_file, N_ELEM(tofi->history_file), "%s", value);
 	} else if (strcasecmp(option, "fuzzy-match") == 0) {
