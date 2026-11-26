@@ -282,43 +282,57 @@ void paste(struct tofi *tofi)
 	tofi->clipboard.fd = fildes[0];
 }
 
+/*
+ * sway patch: the list scrolls one row at a time instead of jumping a page:
+ * the selection moves, and the window (first_result) follows it only once it
+ * leaves the visible rows. Both ends wrap: Down on the last result goes to
+ * the first, Up on the first to the last.
+ */
 void select_previous_result(struct tofi *tofi)
 {
 	struct entry *entry = &tofi->window.entry;
 
-	if (entry->selection > 0) {
-		entry->selection--;
+	uint32_t n = entry->results.count;
+	if (n == 0) {
 		return;
 	}
-
-	uint32_t nsel = MAX(MIN(entry->num_results_drawn, entry->results.count), 1);
-
-	if (entry->first_result > nsel) {
-		entry->first_result -= entry->last_num_results_drawn;
-		entry->selection = entry->last_num_results_drawn - 1;
-	} else if (entry->first_result > 0) {
-		entry->selection = entry->first_result - 1;
-		entry->first_result = 0;
+	uint32_t visible = MAX(MIN(entry->num_results_drawn, n), 1);
+	uint32_t abs = entry->first_result + entry->selection;
+	if (abs == 0) {
+		abs = n - 1;
+		entry->first_result = n > visible ? n - visible : 0;
+	} else {
+		abs--;
+		if (abs < entry->first_result) {
+			entry->first_result = abs;
+		}
 	}
+	entry->selection = abs - entry->first_result;
+	entry->last_num_results_drawn = entry->num_results_drawn;
 }
 
 void select_next_result(struct tofi *tofi)
 {
 	struct entry *entry = &tofi->window.entry;
 
-	uint32_t nsel = MAX(MIN(entry->num_results_drawn, entry->results.count), 1);
-
-	entry->selection++;
-	if (entry->selection >= nsel) {
-		entry->selection -= nsel;
-		if (entry->results.count > 0) {
-			entry->first_result += nsel;
-			entry->first_result %= entry->results.count;
-		} else {
-			entry->first_result = 0;
-		}
-		entry->last_num_results_drawn = entry->num_results_drawn;
+	uint32_t n = entry->results.count;
+	if (n == 0) {
+		entry->first_result = 0;
+		entry->selection = 0;
+		return;
 	}
+	uint32_t visible = MAX(MIN(entry->num_results_drawn, n), 1);
+	uint32_t abs = entry->first_result + entry->selection + 1;
+	if (abs >= n) {
+		entry->first_result = 0;
+		entry->selection = 0;
+	} else {
+		if (abs >= entry->first_result + visible) {
+			entry->first_result = abs - visible + 1;
+		}
+		entry->selection = abs - entry->first_result;
+	}
+	entry->last_num_results_drawn = entry->num_results_drawn;
 }
 
 void previous_cursor_or_result(struct tofi *tofi)
