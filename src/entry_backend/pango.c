@@ -374,6 +374,16 @@ void entry_backend_pango_update(struct entry *entry)
 
 	/* Render the entry text */
 	if (entry->input_utf8_length == 0) {
+		/*
+		 * sway patch: the cursor stands on its own and the placeholder
+		 * starts one cell to its right -- drawn over the placeholder's
+		 * first character, that character blinked with it.
+		 */
+		struct cursor_theme no_cursor = entry->cursor_theme;
+		no_cursor.show = false;
+		double cw = entry->cursor_theme.show ? entry->cursor_theme.em_width : 0;
+		cairo_save(cr);
+		cairo_translate(cr, cw, 0);
 		render_input(
 				cr,
 				layout,
@@ -381,11 +391,21 @@ void entry_backend_pango_update(struct entry *entry)
 				utf8_strlen(entry->placeholder_text),
 				&entry->placeholder_theme,
 				0,
-				&entry->cursor_theme,
+				&no_cursor,
 				&ink_rect,
 				&logical_rect,
-				room,
-				entry->blink_off);
+				room > cw ? room - cw : 0,
+				false);
+		cairo_restore(cr);
+		if (entry->cursor_theme.show && !entry->blink_off) {
+			struct color c = entry->cursor_theme.color;
+			cairo_save(cr);
+			cairo_set_source_rgba(cr, c.r, c.g, c.b, c.a);
+			cairo_rectangle(cr, 0, 0, cw, logical_rect.height);
+			cairo_fill(cr);
+			cairo_restore(cr);
+		}
+		logical_rect.width += cw;
 	} else if (entry->hide_input) {
 		size_t nchars = entry->input_utf32_length;
 		size_t char_size = entry->hidden_character_utf8_length;
