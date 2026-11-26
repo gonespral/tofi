@@ -1,5 +1,6 @@
 #include <cairo/cairo.h>
 #include <pango/pangocairo.h>
+#define SCROLLBAR_W 5   /* sway patch */
 #include <pango/pango.h>
 #include "../entry.h"
 #include "../log.h"
@@ -361,6 +362,15 @@ void entry_backend_pango_update(struct entry *entry)
 	PangoRectangle logical_rect;
 	render_text_themed(cr, entry, entry->prompt_text, &entry->prompt_theme, &ink_rect, &logical_rect);
 
+	/* sway patch: where the prompt's highlight starts (device x), for the
+	 * scrollbar: render_text_themed draws it from ink x minus padding. */
+	cairo_matrix_t prompt_mat;
+	cairo_get_matrix(cr, &prompt_mat);
+	double prompt_left = prompt_mat.x0 + ink_rect.x;
+	if (entry->prompt_theme.background_color.a > 0 && entry->prompt_theme.padding.left > 0) {
+		prompt_left -= entry->prompt_theme.padding.left;
+	}
+
 	cairo_translate(cr, logical_rect.width + logical_rect.x, 0);
 	cairo_translate(cr, entry->prompt_padding, 0);
 
@@ -462,6 +472,7 @@ void entry_backend_pango_update(struct entry *entry)
 	}
 
 	/* Render our results */
+	double list_top = -1; /* sway patch: scrollbar */
 	size_t i;
 	for (i = 0; i < num_results; i++) {
 		if (entry->horizontal) {
@@ -475,6 +486,11 @@ void entry_backend_pango_update(struct entry *entry)
 			}
 		} else if (i >= entry->num_results) {
 			break;
+		}
+		if (i == 0) {
+			cairo_matrix_t first_mat;
+			cairo_get_matrix(cr, &first_mat);
+			list_top = first_mat.y0;
 		}
 		size_t index = i + entry->first_result;
 		/*
@@ -623,5 +639,46 @@ void entry_backend_pango_update(struct entry *entry)
 	pango_layout_set_width(layout, -1);
 	pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_NONE);
 
+	/*
+	 * sway patch: a scrollbar in the column under the prompt, at its left
+	 * edge, when the list doesn't all fit: thumb height = the shown share, position = the first shown
+	 * result. Text colour at 40% (mixed, opaque).
+	 */
+	size_t total = entry->results.count;
+	if (!entry->horizontal && list_top >= 0 && i > 0 && i < total) {
+		double top = list_top;
+		double bottom = (double)entry->clip_y + entry->clip_height;
+		double track = bottom - top;
+		double h = track * i / total;
+		if (h < 8) {
+			h = 8;
+		}
+		double y = top + (track - h) * entry->first_result / (double)(total - i > 0 ? total - i : 1);
+		if (y + h > bottom) {
+			y = bottom - h;
+		}
+		/*
+		 * Opaque: text colour 40% of the way from the background. A
+		 * translucent fill punched see-through holes in the window
+		 * (one of the two buffers didn't blend), flickering with the
+		 * cursor blink's buffer swaps.
+		 */
+		struct color fg = entry->foreground_color;
+		struct color bg = entry->background_color;
+		cairo_save(cr);
+		cairo_identity_matrix(cr);
+		/* It may sit left of the text area (under the prompt's highlight),
+		 * outside the entry's clip: lift it for this rectangle only. */
+		cairo_reset_clip(cr);
+		cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+		cairo_set_source_rgb(cr,
+				bg.r + (fg.r - bg.r) * 0.4,
+				bg.g + (fg.g - bg.g) * 0.4,
+				bg.b + (fg.b - bg.b) * 0.4);
+		/* Left edge = the prompt highlight's left edge. */
+		cairo_rectangle(cr, prompt_left, y, SCROLLBAR_W, h);
+		cairo_fill(cr);
+		cairo_restore(cr);
+	}
 	cairo_restore(cr);
 }
