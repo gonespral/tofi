@@ -111,6 +111,7 @@ static void render_input(
 		const struct cursor_theme *cursor_theme,
 		PangoRectangle *ink_rect,
 		PangoRectangle *logical_rect,
+		double max_width,
 		bool blink_off)
 {
 	struct directional padding = theme->padding;
@@ -119,9 +120,37 @@ static void render_input(
 
 	pango_layout_set_text(layout, text, -1);
 	pango_cairo_update_layout(cr, layout);
-	pango_cairo_show_layout(cr, layout);
 
+	/*
+	 * sway patch: keep the cursor in view. When it would pass max_width,
+	 * shift the line left so it sits at the right edge, clipped to
+	 * [0, max_width).
+	 */
 	pango_layout_get_pixel_extents(layout, ink_rect, logical_rect);
+	double shift = 0;
+	if (max_width > 0) {
+		double cx = logical_rect->width + logical_rect->x + cursor_theme->em_width;
+		if (cursor_position < text_length) {
+			const char *t = text;
+			for (size_t i = 0; i <= cursor_position; i++) {
+				t = utf8_next_char(t);
+			}
+			PangoRectangle p;
+			pango_layout_get_cursor_pos(layout, t - text, &p, NULL);
+			cx = (double)p.x / PANGO_SCALE;
+		}
+		if (cx > max_width) {
+			shift = cx - max_width;
+		}
+	}
+	cairo_save(cr);
+	if (max_width > 0) {
+		cairo_rectangle(cr, 0, -logical_rect->height, max_width, 3 * logical_rect->height);
+		cairo_clip(cr);
+	}
+	cairo_translate(cr, -shift, 0);
+
+	pango_cairo_show_layout(cr, layout);
 
 	double extra_cursor_advance = 0;
 	if (cursor_position == text_length && cursor_theme->show) {
@@ -166,6 +195,8 @@ static void render_input(
 
 	if (!cursor_theme->show || blink_off) {
 		/* No cursor to draw, we're done. */
+		cairo_restore(cr); /* sway patch: the shift */
+		logical_rect->width = MIN(logical_rect->width, max_width > 0 ? max_width : logical_rect->width);
 		return;
 	}
 
@@ -221,6 +252,10 @@ static void render_input(
 
 	logical_rect->width += extra_cursor_advance;
 	cairo_restore(cr);
+	cairo_restore(cr); /* sway patch: the shift */
+	if (max_width > 0) {
+		logical_rect->width = MIN(logical_rect->width, max_width);
+	}
 }
 
 void entry_backend_pango_init(struct entry *entry, uint32_t *width, uint32_t *height)
@@ -349,6 +384,7 @@ void entry_backend_pango_update(struct entry *entry)
 				&entry->cursor_theme,
 				&ink_rect,
 				&logical_rect,
+				room,
 				entry->blink_off);
 	} else if (entry->hide_input) {
 		size_t nchars = entry->input_utf32_length;
@@ -371,6 +407,7 @@ void entry_backend_pango_update(struct entry *entry)
 				&entry->cursor_theme,
 				&ink_rect,
 				&logical_rect,
+				room,
 				entry->blink_off);
 		free(buf);
 	} else {
@@ -384,6 +421,7 @@ void entry_backend_pango_update(struct entry *entry)
 				&entry->cursor_theme,
 				&ink_rect,
 				&logical_rect,
+				room,
 				entry->blink_off);
 	}
 	logical_rect.width = MAX(logical_rect.width, (int)entry->input_width);
