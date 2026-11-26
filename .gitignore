@@ -62,3 +62,7 @@ tags
 # Project specific files
 build/
 .cache
+
+# Local only: build/install script, notes for Claude
+build.sh
+CLAUDE.md
